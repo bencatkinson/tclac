@@ -19,6 +19,9 @@ namespace esphome {
 namespace tclac {
 
 #define SET_TEMP_MASK	0b00001111
+// Half-degree setpoint flags (Celsius): status byte 9 bit 1, control byte 11 bit 1
+#define HALF_DEGREE_RX_BIT	0b00000010
+#define HALF_DEGREE_TX_BIT	0b00000010
 
 // Сколько раз повторять командный кадр за одну отправку (обход маргинальной
 // линии TX 3.3В->5В без конвертера уровней). Повторы неблокирующие и

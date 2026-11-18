@@ -175,6 +175,8 @@ void tclacClimate::readData() {
 	current_temperature = ((float)((dataRX[17] << 8) | dataRX[18]) / 374.0f - 32.0f) / 1.8f;
 	
 	target_temperature = (dataRX[FAN_SPEED_POS] & SET_TEMP_MASK) + 16;
+	// Half-degree setpoint: status byte 9 bit 1
+	if (dataRX[9] & HALF_DEGREE_RX_BIT) target_temperature += 0.5f;
 
 	//ESP_LOGD("TCL", "TEMP: %f ", current_temperature);
 
@@ -291,7 +293,7 @@ void tclacClimate::control(const climate::ClimateCall &call) {
 	bool changed = false;
 	if (call.get_mode().has_value() && *call.get_mode() != this->mode) changed = true;
 	if (call.get_target_temperature().has_value()
-		&& (int) *call.get_target_temperature() != (int) this->target_temperature) changed = true;
+		&& lroundf(*call.get_target_temperature() * 2.0f) != lroundf(this->target_temperature * 2.0f)) changed = true;
 	if (call.get_fan_mode().has_value()
 		&& (!this->fan_mode.has_value() || *call.get_fan_mode() != this->fan_mode.value())) changed = true;
 	if (call.get_swing_mode().has_value() && *call.get_swing_mode() != this->swing_mode) changed = true;
@@ -332,7 +334,11 @@ void tclacClimate::takeControl() {
 	if (std::isnan(target_temperature) || target_temperature < 16 || target_temperature > 31) {
 		target_temperature = 24;
 	}
-	uint8_t target_temperature_set = 31-(int)target_temperature;
+	// Setpoint in 0.5 °C steps: whole degrees in byte 9, half flag in byte 11 bit 1
+	const float target_half_steps = roundf(target_temperature * 2.0f) / 2.0f;
+	const int target_whole = (int) target_half_steps;
+	const bool target_half = (target_half_steps - target_whole) > 0.25f && target_whole < 31;
+	uint8_t target_temperature_set = 31 - target_whole;
 	
 	// Включаем или отключаем пищалку в зависимости от переключателя в настройках
 	if (beeper_status_){
@@ -598,6 +604,7 @@ void tclacClimate::takeControl() {
 
 	// Установка температуры
 	dataTX[9] = target_temperature_set;
+	if (target_half) dataTX[11] |= HALF_DEGREE_TX_BIT;
 		
 	// Собираем массив байт для отправки в кондиционер
 	dataTX[0] = 0xBB;	//стартовый байт заголовка
